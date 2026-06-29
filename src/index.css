@@ -302,3 +302,116 @@ body {
   border-color: rgba(224, 102, 74, 0.4);
   background: rgba(224, 102, 74, 0.07);
 }
+
+/* Voice panel (Phase 2 centrepiece; the blob replaces this stage in Phase 3) */
+.voice {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.voice-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.dot-idle {
+  background: var(--accent-dim);
+}
+.dot-listening {
+  background: var(--ok);
+  box-shadow: 0 0 12px var(--ok);
+}
+.dot-thinking {
+  background: var(--warn);
+  box-shadow: 0 0 12px var(--warn);
+}
+.dot-speaking {
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+.voice-state {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+.ptt {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-hi);
+  padding: 16px 40px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid var(--accent-dim);
+  background: var(--panel-2);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.05s, color 0.15s;
+}
+.ptt:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.ptt:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.ptt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ptt-live {
+  background: rgba(94, 216, 154, 0.12);
+  border-color: var(--ok);
+  box-shadow: 0 0 24px rgba(94, 216, 154, 0.25);
+  color: var(--ok);
+}
+.ptt-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.transcript {
+  width: 100%;
+  max-width: 640px;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  margin-top: 6px;
+}
+.line {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  font-size: 14px;
+}
+.line .who {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  padding-top: 2px;
+}
+.line-you .said {
+  color: var(--text);
+}
+.line-sage .said {
+  color: var(--text-hi);
+}
+.line.partial .said {
+  color: var(--text-dim);
+}

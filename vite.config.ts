@@ -10,6 +10,8 @@ export default defineConfig({
     // Port mirrors `apiPort` in ../sage/sage.config.json (default 8787).
     proxy: {
       '/api': 'http://127.0.0.1:8787',
+      // the Phase 2 voice channel; ws:true upgrades the proxied connection
+      '/ws': { target: 'ws://127.0.0.1:8787', ws: true },
     },
   },
 })

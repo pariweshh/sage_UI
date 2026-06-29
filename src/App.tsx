@@ -4,6 +4,7 @@ import { StatusStrip } from './components/StatusStrip';
 import { Pending } from './components/Pending';
 import { Notices } from './components/Notices';
 import { Timeline } from './components/Timeline';
+import { VoicePanel } from './components/VoicePanel';
 
 function App() {
   const [state, setState] = useState<DashboardState | null>(null);
@@ -53,6 +54,9 @@ function App() {
       </header>
 
       {error && <div className="banner error">{error}</div>}
+
+      <VoicePanel />
+
       {!state && !error && <div className="banner">Connecting to Sage…</div>}
 
       {state && (
