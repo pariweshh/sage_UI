@@ -1,20 +1,38 @@
-import { useEffect, useRef } from 'react';
-import { useVoice } from '../useVoice';
+import { useEffect, useRef, useState } from 'react';
+import type { VoiceState } from '../voiceClient';
+import { Emblem } from './Emblem';
 
-const STATE_LABEL: Record<string, string> = {
-  idle: 'at rest',
-  listening: 'listening',
-  thinking: 'thinking',
-  speaking: 'speaking',
-};
+interface VoicePanelProps {
+  state: VoiceState;
+  connected: boolean;
+  pttStart: () => void;
+  pttEnd: () => void;
+  sendTyped: (text: string) => void;
+  setSpeak: (on: boolean) => void;
+  speakReplies: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}
 
-// Phase 2 centrepiece: push-to-talk + live transcript. Phase 3 replaces this
-// stage with the voice-reactive blob, driven by the same state.
-export function VoicePanel() {
-  const { state, connected, lines, partial, pttStart, pttEnd } = useVoice();
-  const scrollRef = useRef<HTMLDivElement>(null);
+// Docked chat bar: collapsed by default to a slim handle ("Type instead"), keeping the orb the
+// hero. Clicking it expands UPWARD into the console (Hold to Talk + typed input + speak toggle).
+// The conversation transcript lives in its own left-column panel now, so dialogue is visible in
+// voice mode without ever opening this. Spacebar push-to-talk works while collapsed.
+export function VoicePanel({ state, connected, pttStart, pttEnd, sendTyped, setSpeak, speakReplies, expanded, onToggle }: VoicePanelProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(''); // collapsed by default; `expanded` is owned by App
 
-  // Spacebar push-to-talk (hold). Ignored while typing in a field.
+  // Submit a typed turn (or a typed gate answer) and clear the field; Part C backend
+  // routes it into the same runTurn. Empty submits are ignored.
+  const submitTyped = () => {
+    const t = draft.trim();
+    if (!t) return;
+    sendTyped(t);
+    setDraft('');
+  };
+
+  // Spacebar push-to-talk (hold). Ignored while typing in a field, so a revealed +
+  // focused input types a space instead of triggering PTT; otherwise space = PTT.
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return;
@@ -36,51 +54,91 @@ export function VoicePanel() {
     };
   }, [pttStart, pttEnd]);
 
+  // Focus the field when the console opens; blur on collapse so spacebar PTT works again.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [lines, partial]);
+    if (expanded) inputRef.current?.focus();
+    else inputRef.current?.blur();
+  }, [expanded]);
 
   return (
-    <section className="voice card">
-      <div className="voice-head">
-        <span className={`dot dot-${state}`} aria-hidden="true" />
-        <span className="voice-state">{connected ? STATE_LABEL[state] : 'connecting…'}</span>
+    <div className="dockbar">
+      <div className={`dock-console ${expanded ? 'open' : ''}`}>
+        <div className="dock-console-inner">
+          <div className="dock-panel">
+            <button
+              type="button"
+              className={`ptt ${state === 'listening' ? 'ptt-live' : ''}`}
+              disabled={!connected}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                pttStart();
+              }}
+              onPointerUp={(e) => {
+                e.preventDefault();
+                pttEnd();
+              }}
+              onPointerLeave={() => pttEnd()}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              {state === 'listening' ? 'Listening… release to send' : 'Hold to talk'}
+            </button>
+
+            <div className="chat-row">
+              <span className="chat-slash" aria-hidden="true" />
+              <input
+                ref={inputRef}
+                className="chat-input"
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitTyped();
+                  }
+                }}
+                placeholder="Type to Sage..."
+                aria-label="Type a message to Sage"
+                aria-hidden={!expanded}
+                tabIndex={expanded ? 0 : -1}
+              />
+              <span className="chat-seg" aria-hidden="true" />
+            </div>
+
+            <button
+              type="button"
+              className="speak-toggle"
+              aria-pressed={speakReplies}
+              onClick={() => setSpeak(!speakReplies)}
+              onKeyDown={(e) => {
+                if (e.code === 'Space') e.preventDefault();
+              }}
+            >
+              speak replies: {speakReplies ? 'on' : 'off'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <button
-        type="button"
-        className={`ptt ${state === 'listening' ? 'ptt-live' : ''}`}
-        disabled={!connected}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          pttStart();
+      <div
+        className="dock-handle"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-label={expanded ? 'Collapse chat console' : 'Open chat console to type'}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onToggle();
+          }
         }}
-        onPointerUp={(e) => {
-          e.preventDefault();
-          pttEnd();
-        }}
-        onPointerLeave={() => pttEnd()}
-        onContextMenu={(e) => e.preventDefault()}
       >
-        {state === 'listening' ? 'Listening… release to send' : 'Hold to talk'}
-      </button>
-      <p className="ptt-hint">Hold the button or the spacebar. Approvals are spoken, never clicked.</p>
-
-      <div className="transcript" ref={scrollRef}>
-        {lines.length === 0 && !partial && <p className="empty">Say hello to Sage.</p>}
-        {lines.map((l, i) => (
-          <p key={i} className={`line line-${l.role}`}>
-            <span className="who">{l.role === 'you' ? 'you' : 'sage'}</span>
-            <span className="said">{l.text}</span>
-          </p>
-        ))}
-        {partial && (
-          <p className="line line-sage partial">
-            <span className="who">sage</span>
-            <span className="said">{partial}</span>
-          </p>
-        )}
+        <Emblem />
+        <span className="dock-label">{expanded ? 'Voice only' : 'Type instead'}</span>
+        <span className="chat-seg" aria-hidden="true" />
+        <span className="dock-chevron" aria-hidden="true">{expanded ? '▾' : '▴'}</span>
       </div>
-    </section>
+    </div>
   );
 }

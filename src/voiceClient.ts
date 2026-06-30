@@ -15,11 +15,23 @@ export interface VoiceHandlers {
   onTranscript: (line: TranscriptLine) => void;
   onReplyDelta: (text: string) => void;
   onError: (msg: string) => void;
+  /** A silent typed reply landed: fire a brief non-audio pulse on the core. */
+  onReplyPulse: () => void;
+  /** The canned welcome line, sent once on connect, to show immediately in the transcript. */
+  onGreeting: (text: string) => void;
 }
 
 export interface VoiceClient {
   pttStart: () => void;
   pttEnd: () => void;
+  /** Send a typed turn (or, while the gate waits, a typed yes/no) into the same brain. */
+  sendTyped: (text: string) => void;
+  /** Toggle whether replies are spoken (default on). */
+  setSpeak: (on: boolean) => void;
+  /** Ask the server to speak the canned greeting once; call inside a user gesture (autoplay). */
+  playGreeting: () => void;
+  /** 0..1 analyser amplitude: mic while listening, TTS playback while speaking, else 0. */
+  getAmplitude: () => number;
   dispose: () => void;
 }
 
@@ -42,14 +54,28 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
   let stream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
 
-  // --- playback: schedule incoming PCM back-to-back via Web Audio.
-  // The source -> destination graph is where Phase 3 will tap an AnalyserNode.
+  // --- playback + analysers. PCM plays through a TTS analyser (speaking
+  // amplitude); the mic is tapped by a separate analyser (listening amplitude).
+  // The blob reads these via getAmplitude().
   let audioCtx: AudioContext | null = null;
   let playhead = 0;
   let speakRate = 24000;
+  let ttsAnalyser: AnalyserNode | null = null;
+  let micAnalyser: AnalyserNode | null = null;
+  let micSource: MediaStreamAudioSourceNode | null = null;
   const ctx = (): AudioContext => {
     if (!audioCtx) audioCtx = new AudioContext();
     return audioCtx;
+  };
+  const ttsTap = (): AnalyserNode => {
+    const c = ctx();
+    if (!ttsAnalyser) {
+      ttsAnalyser = c.createAnalyser();
+      ttsAnalyser.fftSize = 256;
+      ttsAnalyser.smoothingTimeConstant = 0.6;
+      ttsAnalyser.connect(c.destination); // analyser -> speakers
+    }
+    return ttsAnalyser;
   };
   const playPcm = (buf: ArrayBuffer): void => {
     const i16 = new Int16Array(buf);
@@ -61,10 +87,25 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     ab.copyToChannel(f32, 0);
     const src = c.createBufferSource();
     src.buffer = ab;
-    src.connect(c.destination);
+    src.connect(ttsTap());
     const startAt = Math.max(c.currentTime, playhead);
     src.start(startAt);
     playhead = startAt + ab.duration;
+  };
+  const rms = (an: AnalyserNode): number => {
+    const buf = new Uint8Array(an.fftSize);
+    an.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const x = (buf[i] - 128) / 128;
+      sum += x * x;
+    }
+    return Math.min(1, Math.sqrt(sum / buf.length) * 4); // scale speech RMS into 0..1
+  };
+  const getAmplitude = (): number => {
+    if (state === 'listening' && micAnalyser) return rms(micAnalyser);
+    if (state === 'speaking' && ttsAnalyser) return rms(ttsAnalyser);
+    return 0;
   };
 
   ws.addEventListener('open', () => {
@@ -98,6 +139,12 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
         speakRate = msg.sampleRate ?? 24000;
         playhead = ctx().currentTime;
         break;
+      case 'reply_pulse':
+        handlers.onReplyPulse();
+        break;
+      case 'greeting':
+        handlers.onGreeting(typeof msg.text === 'string' ? msg.text : '');
+        break;
       case 'error':
         handlers.onError(msg.message);
         break;
@@ -112,6 +159,13 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
   const stopStream = (): void => {
     stream?.getTracks().forEach((t) => t.stop()); // release the mic between presses
     stream = null;
+    try {
+      micSource?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    micSource = null;
+    micAnalyser = null;
   };
 
   const startMic = async (): Promise<void> => {
@@ -126,6 +180,13 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
       stopStream(); // released before the mic finished opening
       return;
     }
+    // tap the mic for the listening-state amplitude (analyser only, never to speakers)
+    const c = ctx();
+    micSource = c.createMediaStreamSource(stream);
+    micAnalyser = c.createAnalyser();
+    micAnalyser.fftSize = 256;
+    micAnalyser.smoothingTimeConstant = 0.6;
+    micSource.connect(micAnalyser);
     const mime = pickMime();
     recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
     recorder.ondataavailable = (e) => {
@@ -174,5 +235,19 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     void audioCtx?.close();
   };
 
-  return { pttStart, pttEnd, dispose };
+  const sendTyped = (text: string): void => send({ type: 'typed_turn', text });
+  const setSpeak = (on: boolean): void => send({ type: 'set_speak', on });
+
+  // Browsers block audio before a user gesture. Call this from the first interaction:
+  // resume the AudioContext (unlock) inside the gesture, then ask the server to speak the
+  // greeting. Fires at most once; the server also only ever speaks the greeting once.
+  let greetingRequested = false;
+  const playGreeting = (): void => {
+    if (greetingRequested) return;
+    greetingRequested = true;
+    void ctx().resume();
+    send({ type: 'play_greeting' });
+  };
+
+  return { pttStart, pttEnd, sendTyped, setSpeak, playGreeting, getAmplitude, dispose };
 }
