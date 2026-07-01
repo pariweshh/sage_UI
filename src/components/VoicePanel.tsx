@@ -10,6 +10,8 @@ interface VoicePanelProps {
   sendTyped: (text: string) => void;
   setSpeak: (on: boolean) => void;
   speakReplies: boolean;
+  conversationMode: boolean;
+  setConversationMode: (on: boolean) => void;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -18,7 +20,7 @@ interface VoicePanelProps {
 // hero. Clicking it expands UPWARD into the console (Hold to Talk + typed input + speak toggle).
 // The conversation transcript lives in its own left-column panel now, so dialogue is visible in
 // voice mode without ever opening this. Spacebar push-to-talk works while collapsed.
-export function VoicePanel({ state, connected, pttStart, pttEnd, sendTyped, setSpeak, speakReplies, expanded, onToggle }: VoicePanelProps) {
+export function VoicePanel({ state, connected, pttStart, pttEnd, sendTyped, setSpeak, speakReplies, conversationMode, setConversationMode, expanded, onToggle }: VoicePanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(''); // collapsed by default; `expanded` is owned by App
 
@@ -105,17 +107,31 @@ export function VoicePanel({ state, connected, pttStart, pttEnd, sendTyped, setS
               <span className="chat-seg" aria-hidden="true" />
             </div>
 
-            <button
-              type="button"
-              className="speak-toggle"
-              aria-pressed={speakReplies}
-              onClick={() => setSpeak(!speakReplies)}
-              onKeyDown={(e) => {
-                if (e.code === 'Space') e.preventDefault();
-              }}
-            >
-              speak replies: {speakReplies ? 'on' : 'off'}
-            </button>
+            <div className="toggle-row">
+              <button
+                type="button"
+                className="speak-toggle"
+                aria-pressed={speakReplies}
+                onClick={() => setSpeak(!speakReplies)}
+                onKeyDown={(e) => {
+                  if (e.code === 'Space') e.preventDefault();
+                }}
+              >
+                speak replies: {speakReplies ? 'on' : 'off'}
+              </button>
+              <button
+                type="button"
+                className={`speak-toggle convo-toggle ${conversationMode ? 'convo-on' : ''}`}
+                aria-pressed={conversationMode}
+                onClick={() => setConversationMode(!conversationMode)}
+                onKeyDown={(e) => {
+                  if (e.code === 'Space') e.preventDefault();
+                }}
+                title="Hands-free: I detect when you start and stop talking. Press M to toggle."
+              >
+                conversation: {conversationMode ? 'on' : 'off'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

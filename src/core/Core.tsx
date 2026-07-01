@@ -12,6 +12,8 @@ interface CoreProps {
   getAmplitude: () => number;
   reduced: boolean;
   replyPulse: number;
+  /** Conversation mode armed (waiting for me to speak): a subtle "hot/listening" cue on idle. */
+  armed?: boolean;
 }
 
 const IDLE = STATE_TARGETS.idle.color;
@@ -30,7 +32,7 @@ const RINGS = [
   { radius: 0.58, tube: 0.0048, tilt: [0.21, -0.05, 0.0], segs: 8, gap: 0.36, accent: 0.32, base: 0.11, seed: 13.2, speed: -0.03 },
 ] as const;
 
-export function Core({ state, getAmplitude, reduced, replyPulse }: CoreProps) {
+export function Core({ state, getAmplitude, reduced, replyPulse, armed }: CoreProps) {
   const groupRef = useRef<Group>(null);
   const params = useRef<CoreParams>(cloneParams(STATE_TARGETS.idle));
   const tlRef = useRef<ReturnType<typeof choreograph> | null>(null);
@@ -131,6 +133,11 @@ export function Core({ state, getAmplitude, reduced, replyPulse }: CoreProps) {
     audioSm.current += (amp - audioSm.current) * (1 - Math.exp(-dt / envTau));
     const env = (reduced ? audioSm.current * 0.5 : audioSm.current) * p.audioGain;
 
+    // Conversation mode "armed" cue: a subtle brighter breathing glow on idle, so I can tell the
+    // mic is hot and waiting — distinct from, and far gentler than, the listening ignition.
+    const armedIdle = armed === true && state === 'idle';
+    const armedGlow = armedIdle ? (reduced ? 0.12 : 0.06 + (Math.sin(T * 2.2) * 0.5 + 0.5) * 0.16) : 0;
+
     // Voice speeds the surface flow too -> waves travel faster when ignited.
     flow.current += dt * p.flowSpeed * (1 + env * 0.6) * (reduced ? 0.4 : 1);
 
@@ -161,7 +168,7 @@ export function Core({ state, getAmplitude, reduced, replyPulse }: CoreProps) {
     uOrb.uTime.value = T;
     uOrb.uFlowTime.value = flow.current;
     uOrb.uColor.value.copy(col);
-    uOrb.uEmissive.value = p.emissive;
+    uOrb.uEmissive.value = p.emissive + armedGlow;
     uOrb.uEnv.value = env;
     uOrb.uShock.value = shock.current;
     uOrb.uWaveAmp.value = p.waveAmp;
@@ -172,7 +179,7 @@ export function Core({ state, getAmplitude, reduced, replyPulse }: CoreProps) {
     uPoints.uEnv.value = env;
     uPoints.uShock.value = shock.current;
     uPoints.uSpread.value = p.particleSpread;
-    uPoints.uEnergy.value = p.particleEnergy;
+    uPoints.uEnergy.value = p.particleEnergy + (armedIdle ? 0.06 : 0);
     uPoints.uReduced.value = reduced ? 1 : 0;
 
     for (let i = 0; i < RINGS.length; i++) {

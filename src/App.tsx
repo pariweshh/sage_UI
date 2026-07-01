@@ -54,6 +54,18 @@ function App() {
     };
   }, [voice.playGreeting]);
 
+  // Quick mute / hands-free toggle: "M" flips Conversation mode (ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== 'm' && e.key !== 'M') || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      voice.setConversationMode(!voice.conversationMode);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [voice.conversationMode, voice.setConversationMode]);
+
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const next = await fetchState(signal);
@@ -92,7 +104,13 @@ function App() {
   return (
     <div className="app">
       {/* Layer A: the reactive HUD core (fixed, behind everything). */}
-      <Scene state={coreState} getAmplitude={voice.getAmplitude} reduced={reduced} replyPulse={voice.replyPulse} />
+      <Scene
+        state={coreState}
+        getAmplitude={voice.getAmplitude}
+        reduced={reduced}
+        replyPulse={voice.replyPulse}
+        armed={voice.conversationMode && voice.convoStatus === 'armed'}
+      />
       {/* Layer B chrome frame: brackets, rails, grid, scanlines. */}
       <HudFrame reduced={reduced} />
 
@@ -112,6 +130,21 @@ function App() {
               <i>PENDING</i>
               <b>{pending.toString().padStart(2, '0')}</b>
             </span>
+            {voice.convoStatus !== 'off' && (
+              <span
+                className={`hot-mic hot-mic-${voice.convoStatus}`}
+                role="status"
+                aria-live="polite"
+                title="Conversation mode is on — the mic is live. Press M or the toggle to stop."
+              >
+                <span className="hot-dot" aria-hidden="true" />
+                {voice.convoStatus === 'capturing'
+                  ? 'LISTENING'
+                  : voice.convoStatus === 'blocked'
+                    ? 'MIC HELD'
+                    : 'MIC LIVE'}
+              </span>
+            )}
           </div>
           {state && <StatusStrip cost={state.cost} killSwitch={state.killSwitch} />}
         </header>
@@ -143,6 +176,8 @@ function App() {
           sendTyped={voice.sendTyped}
           setSpeak={voice.setSpeak}
           speakReplies={voice.speakReplies}
+          conversationMode={voice.conversationMode}
+          setConversationMode={voice.setConversationMode}
           expanded={chatExpanded}
           onToggle={() => setChatExpanded((v) => !v)}
         />

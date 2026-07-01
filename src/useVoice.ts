@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createVoiceClient, type VoiceClient, type VoiceState, type TranscriptLine } from './voiceClient';
+import { createVoiceClient, type VoiceClient, type VoiceState, type TranscriptLine, type ConvoStatus } from './voiceClient';
 
 export interface UseVoice {
   state: VoiceState;
@@ -18,6 +18,12 @@ export interface UseVoice {
   playGreeting: () => void;
   /** The canned welcome line shown under the orb (separate from the conversation transcript). */
   greeting: string;
+  /** Enable/disable hands-free Conversation mode (open-mic). Enabling forces speak-replies on. */
+  setConversationMode: (on: boolean) => void;
+  /** Whether Conversation mode is on (the toggle's pressed state). */
+  conversationMode: boolean;
+  /** Fine-grained mic status (off | armed | capturing | blocked): drives the hot-mic indicator + orb. */
+  convoStatus: ConvoStatus;
   /** Increments on each silent typed reply -> the core fires a brief non-audio pulse. */
   replyPulse: number;
   /** Stable getter the core reads each frame; 0 when no client/amplitude. */
@@ -34,6 +40,8 @@ export function useVoice(): UseVoice {
   const [replyPulse, setReplyPulse] = useState(0);
   const [speakReplies, setSpeakState] = useState(true); // replies speak by default
   const [greeting, setGreeting] = useState(''); // shown under the orb, not in the transcript
+  const [conversationMode, setConversationModeState] = useState(false); // hands-free open-mic toggle
+  const [convoStatus, setConvoStatus] = useState<ConvoStatus>('off');
   const clientRef = useRef<VoiceClient | null>(null);
   const speakRef = useRef(true); // latest toggle value; re-sent on each (re)connect so it stays sticky
   const greetedRef = useRef(false); // the welcome line is shown once per session
@@ -57,6 +65,10 @@ export function useVoice(): UseVoice {
         greetedRef.current = true;
         setGreeting(text); // shown under the orb, not pushed into the conversation transcript
       },
+      onConvoStatus: (s) => {
+        setConvoStatus(s);
+        if (s === 'off') setConversationModeState(false); // client dropped the mic (e.g. denied/failed)
+      },
     });
     clientRef.current = client;
     return () => client.dispose();
@@ -71,10 +83,19 @@ export function useVoice(): UseVoice {
     clientRef.current?.setSpeak(on);
   }, []);
   const playGreeting = useCallback(() => clientRef.current?.playGreeting(), []);
+  const setConversationMode = useCallback(
+    (on: boolean) => {
+      setConversationModeState(on);
+      if (on) setSpeak(true); // hands-free implies spoken replies (updates the sticky toggle + backend)
+      clientRef.current?.setConversationMode(on);
+    },
+    [setSpeak],
+  );
   const getAmplitude = useCallback(() => clientRef.current?.getAmplitude() ?? 0, []);
 
   return {
     state, connected, lines, partial, pttStart, pttEnd, sendTyped,
-    setSpeak, speakReplies, playGreeting, greeting, replyPulse, getAmplitude,
+    setSpeak, speakReplies, playGreeting, greeting,
+    setConversationMode, conversationMode, convoStatus, replyPulse, getAmplitude,
   };
 }

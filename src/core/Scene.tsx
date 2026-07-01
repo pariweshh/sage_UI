@@ -10,12 +10,13 @@ interface SceneProps {
   getAmplitude: () => number;
   reduced: boolean;
   replyPulse: number;
+  armed?: boolean;
 }
 
 // The HUD core stage. Post-processing is spare and cinematic: Bloom (FIXED
 // intensity — the glow comes from additive emissive in the shaders, never a
 // per-frame bloom uniform), subtle ChromaticAberration, Vignette, faint grain.
-export function Scene({ state, getAmplitude, reduced, replyPulse }: SceneProps) {
+export function Scene({ state, getAmplitude, reduced, replyPulse, armed }: SceneProps) {
   return (
     <Canvas
       className="scene"
@@ -24,7 +25,7 @@ export function Scene({ state, getAmplitude, reduced, replyPulse }: SceneProps) 
       dpr={[1, 2]}
     >
       <color attach="background" args={['#02050b']} />
-      <Core state={state} getAmplitude={getAmplitude} reduced={reduced} replyPulse={replyPulse} />
+      <Core state={state} getAmplitude={getAmplitude} reduced={reduced} replyPulse={replyPulse} armed={armed} />
       <EffectComposer>
         <Bloom intensity={1.15} luminanceThreshold={0.12} luminanceSmoothing={0.65} radius={0.8} mipmapBlur />
         <ChromaticAberration offset={new Vector2(0.0008, 0.0011)} />

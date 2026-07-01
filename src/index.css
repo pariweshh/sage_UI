@@ -235,6 +235,44 @@ body {
 .tlm-state.s-thinking { color: var(--violet); }
 .tlm-state.s-speaking { color: var(--amber); }
 
+/* Hot-mic indicator: always visible in the header while Conversation mode is on, so the mic's
+   live state is never ambiguous. Cyan-bright + pulsing dot when hot; dimmed while Sage speaks. */
+.hot-mic {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--hud);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 4px 11px;
+  border: 1px solid rgba(63, 224, 255, 0.5);
+  color: var(--cyan-bright);
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  clip-path: var(--cut-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.hot-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cyan-bright);
+  box-shadow: 0 0 10px var(--cyan-bright);
+  animation: hot-pulse 1.2s ease-in-out infinite;
+}
+.hot-mic-capturing { border-color: var(--cyan); }
+.hot-mic-blocked { color: var(--cyan-dim); border-color: rgba(74, 126, 146, 0.5); }
+.hot-mic-blocked .hot-dot { background: var(--cyan-dim); box-shadow: none; animation: none; }
+@keyframes hot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hot-dot { animation: none; }
+}
+
 /* Status strip (cost gauge + kill switch) */
 .status {
   display: flex;
@@ -603,6 +641,9 @@ body {
 }
 .speak-toggle:hover { color: var(--cyan); }
 .speak-toggle[aria-pressed='true'] { color: var(--cyan-bright); }
+/* Conversation-mode toggle sits next to speak-replies; distinct accent + glow when armed. */
+.toggle-row { display: flex; align-items: center; gap: 16px; align-self: flex-start; }
+.convo-toggle.convo-on { color: var(--cyan-bright); text-shadow: 0 0 8px rgba(63, 224, 255, 0.55); }
 .ptt {
   pointer-events: auto;
   font-family: var(--hud);
