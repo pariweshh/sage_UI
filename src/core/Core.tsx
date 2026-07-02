@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Color, type Group } from 'three';
 import { ORB_VERT, ORB_FRAG, POINTS_VERT, POINTS_FRAG, RING_VERT, RING_FRAG } from './coreShaders';
-import { STATE_TARGETS, cloneParams, type CoreParams } from './states';
+import { cloneParams, type CoreParams, type StateTargets } from './states';
 import { choreograph } from './choreography';
 import { makeParticles } from './particles';
 import type { VoiceState } from '../voiceClient';
@@ -12,11 +12,16 @@ interface CoreProps {
   getAmplitude: () => number;
   reduced: boolean;
   replyPulse: number;
+  /** Per-state orb params from the active theme; a change re-choreographs in place. */
+  targets: StateTargets;
   /** Conversation mode armed (waiting for me to speak): a subtle "hot/listening" cue on idle. */
   armed?: boolean;
+  /** Wake window open (engaged): intensifies the armed cue a touch, so open vs dormant reads. */
+  engaged?: boolean;
 }
 
-const IDLE = STATE_TARGETS.idle.color;
+// Uniform/ref initial hue only; the render color lerps toward params.color each frame.
+const IDLE = '#37c9e0';
 const ORB_R = 0.3; // orb radius (world units)
 const ORB_DETAIL = 24; // icosahedron subdivision — smooth, even verts, no pole pinch
 const HERO = 1.5; // orb-as-centerpiece: scales the whole core (orb + rings + particles)
@@ -32,9 +37,9 @@ const RINGS = [
   { radius: 0.58, tube: 0.0048, tilt: [0.21, -0.05, 0.0], segs: 8, gap: 0.36, accent: 0.32, base: 0.11, seed: 13.2, speed: -0.03 },
 ] as const;
 
-export function Core({ state, getAmplitude, reduced, replyPulse, armed }: CoreProps) {
+export function Core({ state, getAmplitude, reduced, replyPulse, targets, armed, engaged }: CoreProps) {
   const groupRef = useRef<Group>(null);
-  const params = useRef<CoreParams>(cloneParams(STATE_TARGETS.idle));
+  const params = useRef<CoreParams>(cloneParams(targets.idle));
   const tlRef = useRef<ReturnType<typeof choreograph> | null>(null);
   const time = useRef(0);
   const flow = useRef(0);
@@ -105,14 +110,14 @@ export function Core({ state, getAmplitude, reduced, replyPulse, armed }: CorePr
     return () => window.removeEventListener('pointermove', onMove);
   }, []);
 
-  // choreograph each state change (kill the prior timeline first)
+  // choreograph each state change AND each theme change (kill the prior timeline first)
   useEffect(() => {
     tlRef.current?.kill();
-    tlRef.current = choreograph(params.current, state, reduced);
+    tlRef.current = choreograph(params.current, state, targets, reduced);
     return () => {
       tlRef.current?.kill();
     };
-  }, [state, reduced]);
+  }, [state, reduced, targets]);
 
   // A silent typed reply: fire a one-shot impulse (reuses the shock mechanism, so the
   // pulse propagates through orb + particles + rings). The initial 0 doesn't fire; under
@@ -136,7 +141,8 @@ export function Core({ state, getAmplitude, reduced, replyPulse, armed }: CorePr
     // Conversation mode "armed" cue: a subtle brighter breathing glow on idle, so I can tell the
     // mic is hot and waiting — distinct from, and far gentler than, the listening ignition.
     const armedIdle = armed === true && state === 'idle';
-    const armedGlow = armedIdle ? (reduced ? 0.12 : 0.06 + (Math.sin(T * 2.2) * 0.5 + 0.5) * 0.16) : 0;
+    const armedBase = reduced ? 0.12 : 0.06 + (Math.sin(T * 2.2) * 0.5 + 0.5) * 0.16;
+    const armedGlow = armedIdle ? armedBase * (engaged === true ? 1.5 : 1) : 0;
 
     // Voice speeds the surface flow too -> waves travel faster when ignited.
     flow.current += dt * p.flowSpeed * (1 + env * 0.6) * (reduced ? 0.4 : 1);

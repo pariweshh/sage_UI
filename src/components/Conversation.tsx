@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TranscriptLine } from '../voiceClient';
 
 interface ConversationProps {
@@ -12,6 +12,7 @@ interface ConversationProps {
 export function Conversation({ lines, partial }: ConversationProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  const [collapsed, setCollapsed] = useState(false); // fold to a header so the rail never crowds
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -24,7 +25,18 @@ export function Conversation({ lines, partial }: ConversationProps) {
 
   return (
     <section className="card conversation">
-      <h2>Conversation</h2>
+      <h2>
+        <button
+          type="button"
+          className="card-fold"
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? 'Expand the conversation' : 'Collapse the conversation'}
+        >
+          Conversation <i aria-hidden="true">{collapsed ? '▸' : '▾'}</i>
+        </button>
+      </h2>
+      {collapsed ? null : (
       <div className="convo-scroll" ref={scrollRef} onScroll={onScroll}>
         {lines.length === 0 && !partial ? (
           <p className="empty">Nothing said yet. Hold space to talk, or type.</p>
@@ -45,6 +57,7 @@ export function Conversation({ lines, partial }: ConversationProps) {
           </>
         )}
       </div>
+      )}
     </section>
   );
 }

@@ -3,11 +3,13 @@
 // SDK here; all of that stays server-side. The mic is live only while held, so
 // the browser never captures Sage's own speech.
 
-import { createVad, VAD_TUNING, type VadController } from './conversation';
+import { createVad, VAD_TUNING, WAKE_TUNING, matchWake, type VadController } from './conversation';
 
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 /** Conversation-mode status: off, armed (waiting for you), capturing (you speak), blocked (Sage responds). */
 export type ConvoStatus = 'off' | 'armed' | 'capturing' | 'blocked';
+/** Wake gating: dormant (say the wake word) vs engaged (active window; follow-ups need no wake word). */
+export type WakeState = 'dormant' | 'engaged';
 export interface TranscriptLine {
   role: 'you' | 'sage';
   text: string;
@@ -25,19 +27,31 @@ export interface VoiceHandlers {
   onGreeting: (text: string) => void;
   /** Conversation-mode status changed (drives the hot-mic indicator + the orb's armed cue). */
   onConvoStatus: (status: ConvoStatus) => void;
+  /** The configured assistant name (sent on connect): drives the HUD + the default wake word. */
+  onIdentity: (name: string) => void;
+  /** Wake gating state changed (dormant vs engaged): drives the HUD wake readout + orb cue. */
+  onWakeState: (state: WakeState) => void;
+  /** A skill run's lifecycle (running/ok/error): drives the command deck's status dots. */
+  onSkillStatus: (name: string, status: SkillStatus) => void;
 }
+
+export type SkillStatus = 'running' | 'ok' | 'error';
 
 export interface VoiceClient {
   pttStart: () => void;
   pttEnd: () => void;
   /** Send a typed turn (or, while the gate waits, a typed yes/no) into the same brain. */
   sendTyped: (text: string) => void;
+  /** Run a skill by name over the conversation channel (a deck click is an utterance). */
+  runSkill: (name: string) => void;
   /** Toggle whether replies are spoken (default on). */
   setSpeak: (on: boolean) => void;
   /** Ask the server to speak the canned greeting once; call inside a user gesture (autoplay). */
   playGreeting: () => void;
   /** Enable/disable hands-free Conversation mode (opt-in open-mic layer over PTT). */
   setConversationMode: (on: boolean) => void;
+  /** Toggle wake-word gating for conversation mode (on by default; off = every utterance is a turn). */
+  setWakeGating: (on: boolean) => void;
   /** 0..1 analyser amplitude: mic while listening, TTS playback while speaking, else 0. */
   getAmplitude: () => number;
   dispose: () => void;
@@ -51,10 +65,16 @@ function pickMime(): string | undefined {
   return undefined;
 }
 
+const RECONNECT_MIN_MS = 1_000;
+const RECONNECT_MAX_MS = 15_000;
+
 export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
-  const ws = new WebSocket(url);
-  ws.binaryType = 'arraybuffer';
+  // The socket is (re)created by connect(); every sender checks readyState, so a
+  // dead link drops work loudly (busy/error events) instead of silently.
+  let ws!: WebSocket;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectDelayMs = RECONNECT_MIN_MS;
 
   let state: VoiceState = 'idle';
   let holding = false;
@@ -79,6 +99,12 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
   let convoAnalyser: AnalyserNode | null = null;
   let vad: VadController | null = null;
   let rearmTimer: ReturnType<typeof setTimeout> | null = null;
+  // Wake-word gating (conversation mode only): the window opens on the wake word; while open,
+  // follow-ups need no wake word; it closes after a lull. PTT + typed are never gated.
+  let assistantName = ''; // received from the backend (identity); the default wake word
+  let wakeGating: boolean = WAKE_TUNING.WAKE_GATING_DEFAULT;
+  let wakeWindowOpen = false;
+  let wakeTimer: ReturnType<typeof setTimeout> | null = null;
   const ctx = (): AudioContext => {
     if (!audioCtx) audioCtx = new AudioContext();
     return audioCtx;
@@ -150,6 +176,60 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     }, drainMs + VAD_TUNING.REARM_DEBOUNCE_MS);
   };
 
+  // --- Wake-word gating (transcript-based; the turn logic lives entirely here). ------------------
+  const wakeWords = (): string[] => {
+    const primary = (WAKE_TUNING.WAKE_PHRASE || assistantName).trim();
+    const all = [primary, ...WAKE_TUNING.WAKE_VARIANTS].map((w) => w.trim().toLowerCase()).filter(Boolean);
+    return Array.from(new Set(all));
+  };
+  const emitWakeState = (): void => handlers.onWakeState(wakeWindowOpen ? 'engaged' : 'dormant');
+  const armWindowTimer = (): void => {
+    if (wakeTimer !== null) clearTimeout(wakeTimer);
+    wakeTimer = setTimeout(() => {
+      wakeTimer = null;
+      wakeWindowOpen = false;
+      emitWakeState();
+    }, WAKE_TUNING.WAKE_WINDOW_TIMEOUT_MS);
+  };
+  const openWindow = (): void => {
+    wakeWindowOpen = true;
+    armWindowTimer();
+    emitWakeState();
+  };
+  const closeWindow = (): void => {
+    wakeWindowOpen = false;
+    if (wakeTimer !== null) {
+      clearTimeout(wakeTimer);
+      wakeTimer = null;
+    }
+    emitWakeState();
+  };
+  const refreshWindow = (): void => {
+    if (wakeWindowOpen) armWindowTimer(); // reset the timer after the assistant replies / after I speak
+  };
+  const dispatchTurn = (text: string): void => {
+    openWindow(); // my speech opens/refreshes the active window
+    send({ type: 'typed_turn', text }); // the SAME runTurn + gate; the (stripped) text shows as my line
+  };
+  // The client's wake gate, run on the transcript the backend returns (stt_result) before any turn.
+  const onSttResult = (text: string): void => {
+    const t = text.trim();
+    if (!t) return; // empty/garbage utterance -> ignore (the following state=idle re-arms)
+    if (!wakeGating || wakeWindowOpen) {
+      dispatchTurn(t); // gating off, or already engaged -> no wake word needed
+      return;
+    }
+    const m = matchWake(t, wakeWords());
+    if (!m.hit) return; // dormant + no wake word -> not for me; ignore
+    if (m.remainder) dispatchTurn(m.remainder); // "<name>, <turn>" -> strip the wake word, run the rest
+    else openWindow(); // only the wake word -> attention: open the window and wait for the next turn
+  };
+  const setWakeGating = (on: boolean): void => {
+    wakeGating = on;
+    if (!on) closeWindow();
+    else emitWakeState();
+  };
+
   // VAD detected the start of my turn: behave exactly like pttStart (same WS message, same backend).
   const onConvoSpeechStart = (): void => {
     if (convoStatus !== 'armed' || state !== 'idle') return;
@@ -158,14 +238,15 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     send({ type: 'ptt_start' });
   };
 
-  // VAD detected the end of my turn: send the utterance as one WAV chunk, then ptt_end (mirrors PTT
-  // end), and go half-duplex (pause the VAD) until Sage's reply finishes and we re-arm.
+  // VAD detected the end of my turn: send the utterance as one WAV chunk, then transcribe_only (the
+  // backend returns the transcript WITHOUT running a turn), and go half-duplex (pause the VAD). Wake
+  // gating then decides on the client whether to dispatch the turn.
   const onConvoSpeechEnd = (wav: ArrayBuffer): void => {
     if (convoStatus !== 'capturing') return;
     setConvoStatus('blocked');
     vad?.pause();
     if (ws.readyState === WebSocket.OPEN) ws.send(wav);
-    send({ type: 'ptt_end' });
+    send({ type: 'transcribe_only' });
   };
 
   const stopConversation = async (): Promise<void> => {
@@ -185,6 +266,7 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     convoAnalyser = null;
     convoStream?.getTracks().forEach((t) => t.stop()); // release the mic immediately
     convoStream = null;
+    closeWindow(); // reset the wake window when the mic goes away
     setConvoStatus('off');
   };
 
@@ -227,16 +309,22 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     else void stopConversation();
   };
 
-  ws.addEventListener('open', () => {
+  const onWsOpen = (): void => {
+    reconnectDelayMs = RECONNECT_MIN_MS; // a good link resets the backoff
     if (!disposed) handlers.onConnected(true);
-  });
-  ws.addEventListener('close', () => {
-    if (!disposed) handlers.onConnected(false);
-  });
-  ws.addEventListener('error', () => {
+  };
+  const onWsClose = (): void => {
+    if (disposed) return;
+    handlers.onConnected(false);
+    // Auto-reconnect with exponential backoff: a server restart no longer
+    // strands the page (the old failure mode: dead WS until a manual reload).
+    reconnectTimer = setTimeout(connect, reconnectDelayMs);
+    reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_MS);
+  };
+  const onWsError = (): void => {
     if (!disposed) handlers.onError('voice connection error');
-  });
-  ws.addEventListener('message', (ev) => {
+  };
+  const onWsMessage = (ev: MessageEvent): void => {
     if (disposed) return;
     if (typeof ev.data !== 'string') {
       playPcm(ev.data as ArrayBuffer);
@@ -247,7 +335,10 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
       case 'state':
         state = msg.state;
         handlers.onState(state);
-        if (convoStatus !== 'off' && state === 'idle') scheduleRearm(); // half-duplex: re-arm after Sage rests
+        if (convoStatus !== 'off' && state === 'idle') {
+          scheduleRearm(); // half-duplex: re-arm after Sage rests
+          refreshWindow(); // the reply just landed -> keep the active window open
+        }
         break;
       case 'transcript':
         handlers.onTranscript({ role: msg.role === 'sage' ? 'sage' : 'you', text: msg.text });
@@ -265,12 +356,32 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
       case 'greeting':
         handlers.onGreeting(typeof msg.text === 'string' ? msg.text : '');
         break;
+      case 'identity':
+        assistantName = typeof msg.name === 'string' ? msg.name : '';
+        handlers.onIdentity(assistantName);
+        break;
+      case 'stt_result':
+        onSttResult(typeof msg.text === 'string' ? msg.text : '');
+        break;
+      case 'skill_status':
+        if (typeof msg.name === 'string') handlers.onSkillStatus(msg.name, msg.status as SkillStatus);
+        break;
       case 'error':
         handlers.onError(msg.message);
         break;
       // 'audio_end': nothing to do; chunks are already scheduled
     }
-  });
+  };
+
+  const connect = (): void => {
+    ws = new WebSocket(url);
+    ws.binaryType = 'arraybuffer';
+    ws.addEventListener('open', onWsOpen);
+    ws.addEventListener('close', onWsClose);
+    ws.addEventListener('error', onWsError);
+    ws.addEventListener('message', onWsMessage);
+  };
+  connect();
 
   const send = (o: object): void => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
@@ -340,6 +451,7 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
 
   const dispose = (): void => {
     disposed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     void stopConversation();
     holding = false;
     try {
@@ -357,6 +469,7 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
   };
 
   const sendTyped = (text: string): void => send({ type: 'typed_turn', text });
+  const runSkill = (name: string): void => send({ type: 'run_skill', name });
   const setSpeak = (on: boolean): void => send({ type: 'set_speak', on });
 
   // Browsers block audio before a user gesture. Call this from the first interaction:
@@ -370,5 +483,5 @@ export function createVoiceClient(handlers: VoiceHandlers): VoiceClient {
     send({ type: 'play_greeting' });
   };
 
-  return { pttStart, pttEnd, sendTyped, setSpeak, playGreeting, setConversationMode, getAmplitude, dispose };
+  return { pttStart, pttEnd, sendTyped, runSkill, setSpeak, playGreeting, setConversationMode, setWakeGating, getAmplitude, dispose };
 }

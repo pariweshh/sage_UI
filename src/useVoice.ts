@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createVoiceClient, type VoiceClient, type VoiceState, type TranscriptLine, type ConvoStatus } from './voiceClient';
+import { createVoiceClient, type VoiceClient, type VoiceState, type TranscriptLine, type ConvoStatus, type WakeState, type SkillStatus } from './voiceClient';
+import { WAKE_TUNING } from './conversation';
 
 export interface UseVoice {
   state: VoiceState;
@@ -24,8 +25,19 @@ export interface UseVoice {
   conversationMode: boolean;
   /** Fine-grained mic status (off | armed | capturing | blocked): drives the hot-mic indicator + orb. */
   convoStatus: ConvoStatus;
+  /** The configured assistant name (from the backend); drives the HUD + the default wake word. */
+  assistantName: string;
+  /** Wake-word gating on/off for conversation mode (on by default). */
+  wakeGating: boolean;
+  setWakeGating: (on: boolean) => void;
+  /** Dormant (say the wake word) vs engaged (active window; follow-ups need no wake word). */
+  wakeState: WakeState;
   /** Increments on each silent typed reply -> the core fires a brief non-audio pulse. */
   replyPulse: number;
+  /** Run a skill by name over the conversation channel (the command deck's click). */
+  runSkill: (name: string) => void;
+  /** Live per-skill run status (running/ok/error) for the deck's status dots. */
+  skillStatus: Record<string, SkillStatus>;
   /** Stable getter the core reads each frame; 0 when no client/amplitude. */
   getAmplitude: () => number;
 }
@@ -42,6 +54,10 @@ export function useVoice(): UseVoice {
   const [greeting, setGreeting] = useState(''); // shown under the orb, not in the transcript
   const [conversationMode, setConversationModeState] = useState(false); // hands-free open-mic toggle
   const [convoStatus, setConvoStatus] = useState<ConvoStatus>('off');
+  const [assistantName, setAssistantName] = useState(''); // from the backend identity message
+  const [wakeGating, setWakeGatingState] = useState<boolean>(WAKE_TUNING.WAKE_GATING_DEFAULT);
+  const [wakeState, setWakeState] = useState<WakeState>('dormant');
+  const [skillStatus, setSkillStatus] = useState<Record<string, SkillStatus>>({});
   const clientRef = useRef<VoiceClient | null>(null);
   const speakRef = useRef(true); // latest toggle value; re-sent on each (re)connect so it stays sticky
   const greetedRef = useRef(false); // the welcome line is shown once per session
@@ -69,6 +85,9 @@ export function useVoice(): UseVoice {
         setConvoStatus(s);
         if (s === 'off') setConversationModeState(false); // client dropped the mic (e.g. denied/failed)
       },
+      onIdentity: (name) => setAssistantName(name),
+      onWakeState: (s) => setWakeState(s),
+      onSkillStatus: (name, status) => setSkillStatus((prev) => ({ ...prev, [name]: status })),
     });
     clientRef.current = client;
     return () => client.dispose();
@@ -91,11 +110,18 @@ export function useVoice(): UseVoice {
     },
     [setSpeak],
   );
+  const setWakeGating = useCallback((on: boolean) => {
+    setWakeGatingState(on);
+    clientRef.current?.setWakeGating(on);
+  }, []);
   const getAmplitude = useCallback(() => clientRef.current?.getAmplitude() ?? 0, []);
+  const runSkill = useCallback((name: string) => clientRef.current?.runSkill(name), []);
 
   return {
     state, connected, lines, partial, pttStart, pttEnd, sendTyped,
     setSpeak, speakReplies, playGreeting, greeting,
-    setConversationMode, conversationMode, convoStatus, replyPulse, getAmplitude,
+    setConversationMode, conversationMode, convoStatus,
+    assistantName, wakeGating, setWakeGating, wakeState, replyPulse, getAmplitude,
+    runSkill, skillStatus,
   };
 }

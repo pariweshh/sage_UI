@@ -5,10 +5,13 @@
  * hue by state.
  */
 :root {
+  /* Semantic palette tokens. These are the SAGE defaults (pre-JS paint);
+     useTheme() re-applies the active theme's values on :root at runtime. */
   --space: #02050b;
-  --cyan: #3fe0ff;
-  --cyan-bright: #8af0ff;
-  --cyan-dim: #4a7e92;
+  --accent: #3fe0ff;
+  --accent-hi: #8af0ff;
+  --accent-dim: #4a7e92;
+  --accent-rgb: 63, 224, 255;
   --line: rgba(90, 200, 255, 0.18);
   --line-2: rgba(90, 200, 255, 0.09);
   --grid: rgba(90, 200, 255, 0.05);
@@ -16,8 +19,8 @@
   --text: #9fc4d6;
   --text-hi: #d6f1fb;
   --text-dim: #5b7382;
-  --violet: #b985ff;
-  --amber: #ffc15c;
+  --state-thinking: #b985ff;
+  --state-speaking: #ffc15c;
   --ok: #5fe0a0;
   --warn: #ffcf6b;
   --alert: #ff6b5f;
@@ -106,7 +109,7 @@ body {
 }
 .hud-corner path {
   fill: none;
-  stroke: var(--cyan);
+  stroke: var(--accent);
   stroke-width: 1.4;
   opacity: 0.7;
 }
@@ -134,7 +137,7 @@ body {
   transform: translateX(-50%);
   width: 140px;
   height: 5px;
-  background: radial-gradient(ellipse at center, var(--cyan-bright), transparent 70%);
+  background: radial-gradient(ellipse at center, var(--accent-hi), transparent 70%);
   opacity: 0.5;
   filter: blur(2px);
 }
@@ -193,8 +196,8 @@ body {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 12px var(--cyan);
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
 }
 .brand-name {
   font-size: 19px;
@@ -204,7 +207,7 @@ body {
 .brand-sub {
   font-size: 12px;
   letter-spacing: 2px;
-  color: var(--cyan-dim);
+  color: var(--accent-dim);
 }
 .telemetry {
   display: flex;
@@ -227,13 +230,13 @@ body {
   font-family: var(--mono);
   font-weight: 500;
   font-size: 13px;
-  color: var(--cyan-bright);
+  color: var(--accent-hi);
   font-variant-numeric: tabular-nums;
 }
-.tlm-state.s-idle { color: var(--cyan-dim); }
-.tlm-state.s-listening { color: var(--cyan); }
-.tlm-state.s-thinking { color: var(--violet); }
-.tlm-state.s-speaking { color: var(--amber); }
+.tlm-state.s-idle { color: var(--accent-dim); }
+.tlm-state.s-listening { color: var(--accent); }
+.tlm-state.s-thinking { color: var(--state-thinking); }
+.tlm-state.s-speaking { color: var(--state-speaking); }
 
 /* Hot-mic indicator: always visible in the header while Conversation mode is on, so the mic's
    live state is never ambiguous. Cyan-bright + pulsing dot when hot; dimmed while Sage speaks. */
@@ -246,8 +249,8 @@ body {
   letter-spacing: 1.5px;
   text-transform: uppercase;
   padding: 4px 11px;
-  border: 1px solid rgba(63, 224, 255, 0.5);
-  color: var(--cyan-bright);
+  border: 1px solid rgba(var(--accent-rgb),0.5);
+  color: var(--accent-hi);
   background: var(--panel);
   backdrop-filter: blur(6px);
   clip-path: var(--cut-sm);
@@ -258,19 +261,39 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--cyan-bright);
-  box-shadow: 0 0 10px var(--cyan-bright);
+  background: var(--accent-hi);
+  box-shadow: 0 0 10px var(--accent-hi);
   animation: hot-pulse 1.2s ease-in-out infinite;
 }
-.hot-mic-capturing { border-color: var(--cyan); }
-.hot-mic-blocked { color: var(--cyan-dim); border-color: rgba(74, 126, 146, 0.5); }
-.hot-mic-blocked .hot-dot { background: var(--cyan-dim); box-shadow: none; animation: none; }
+.hot-mic-capturing { border-color: var(--accent); }
+.hot-mic-blocked { color: var(--accent-dim); border-color: rgba(74, 126, 146, 0.5); }
+.hot-mic-blocked .hot-dot { background: var(--accent-dim); box-shadow: none; animation: none; }
 @keyframes hot-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.35; transform: scale(0.7); }
 }
 @media (prefers-reduced-motion: reduce) {
   .hot-dot { animation: none; }
+}
+
+/* Wake-gating readout: DORMANT ("listening for '<name>'") vs ENGAGED (active window). Sits next to
+   the hot-mic chip so I always know whether my next sentence needs the wake word. */
+.wake-state {
+  font-family: var(--hud);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  clip-path: var(--cut-sm);
+  white-space: nowrap;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.wake-state.wake-engaged {
+  color: var(--accent-hi);
+  border-color: var(--accent);
+  text-shadow: 0 0 8px rgba(var(--accent-rgb),0.5);
 }
 
 /* Status strip (cost gauge + kill switch) */
@@ -288,7 +311,7 @@ body {
   padding: 4px 11px;
   border: 1px solid var(--line);
   white-space: nowrap;
-  color: var(--cyan);
+  color: var(--accent);
   background: var(--panel);
   backdrop-filter: blur(6px);
   clip-path: var(--cut-sm);
@@ -308,7 +331,7 @@ body {
   background: rgba(90, 200, 255, 0.12);
   overflow: hidden;
 }
-.meter-fill { display: block; height: 100%; background: var(--cyan); transition: width 0.4s ease; }
+.meter-fill { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
 .meter-fill.meter-near { background: var(--alert); }
 
 /* Stage: rails flank the core; centre breathes */
@@ -361,7 +384,7 @@ body {
   font-weight: 400;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  color: var(--cyan);
+  color: var(--accent);
 }
 .card h2::before {
   content: '';
@@ -393,7 +416,7 @@ body {
   gap: 10px;
   padding: 10px;
   background: rgba(90, 200, 255, 0.04);
-  border-left: 2px solid rgba(63, 224, 255, 0.4);
+  border-left: 2px solid rgba(var(--accent-rgb),0.4);
 }
 .notice.sev-alert { border-left-color: var(--alert); }
 .notice-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -421,7 +444,7 @@ body {
   clip-path: var(--cut-sm);
   transition: color 0.15s, border-color 0.15s;
 }
-.dismiss:hover { color: var(--cyan-bright); border-color: var(--cyan); }
+.dismiss:hover { color: var(--accent-hi); border-color: var(--accent); }
 
 /* Timeline */
 .timeline .list { gap: 0; }
@@ -434,7 +457,7 @@ body {
   align-items: baseline;
 }
 .event:last-child { border-bottom: none; }
-.event-name { font-size: 12px; color: var(--cyan); }
+.event-name { font-size: 12px; color: var(--accent); }
 .event-detail { grid-column: 2; font-size: 12px; color: var(--text-dim); word-break: break-word; }
 
 /* Conversation panel: your dialogue with Sage (left column), separate from Activity (right).
@@ -464,7 +487,7 @@ body {
   font-size: 13px;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: var(--cyan-dim);
+  color: var(--accent-dim);
   pointer-events: none;
   z-index: 3;
 }
@@ -562,7 +585,7 @@ body {
   font-size: 11px;
   letter-spacing: 1.6px;
   text-transform: uppercase;
-  color: var(--cyan);
+  color: var(--accent);
 }
 .dock-chevron { flex-shrink: 0; font-size: 10px; color: var(--cut-accent); }
 
@@ -639,18 +662,18 @@ body {
   cursor: pointer;
   transition: color 0.15s;
 }
-.speak-toggle:hover { color: var(--cyan); }
-.speak-toggle[aria-pressed='true'] { color: var(--cyan-bright); }
+.speak-toggle:hover { color: var(--accent); }
+.speak-toggle[aria-pressed='true'] { color: var(--accent-hi); }
 /* Conversation-mode toggle sits next to speak-replies; distinct accent + glow when armed. */
 .toggle-row { display: flex; align-items: center; gap: 16px; align-self: flex-start; }
-.convo-toggle.convo-on { color: var(--cyan-bright); text-shadow: 0 0 8px rgba(63, 224, 255, 0.55); }
+.convo-toggle.convo-on { color: var(--accent-hi); text-shadow: 0 0 8px rgba(var(--accent-rgb),0.55); }
 .ptt {
   pointer-events: auto;
   font-family: var(--hud);
   font-size: 13px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--cyan-bright);
+  color: var(--accent-hi);
   padding: 13px 32px;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -662,10 +685,10 @@ body {
   touch-action: none;
   transition: border-color 0.18s, box-shadow 0.18s, color 0.18s, transform 0.06s;
 }
-.ptt:hover:not(:disabled) { border-color: var(--cyan); }
+.ptt:hover:not(:disabled) { border-color: var(--accent); }
 .ptt:active:not(:disabled) { transform: scale(0.98); }
 .ptt:disabled { opacity: 0.4; cursor: not-allowed; }
-.ptt-live { color: var(--cyan-bright); border-color: var(--cyan); box-shadow: 0 0 26px rgba(63, 224, 255, 0.3); }
+.ptt-live { color: var(--accent-hi); border-color: var(--accent); box-shadow: 0 0 26px rgba(var(--accent-rgb),0.3); }
 .ptt-hint { margin: 0; font-size: 11px; color: var(--text-dim); pointer-events: none; }
 .transcript {
   pointer-events: auto;
@@ -711,8 +734,169 @@ body {
 }
 .banner.error { color: var(--alert); border-color: rgba(255, 107, 95, 0.4); }
 
+/* Command deck: one chip per skill, docked above the voice bar */
+.deck {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 6px 10px;
+  pointer-events: auto;
+}
+.deck-label { font-family: var(--hud); font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); }
+.deck-chip {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  clip-path: var(--cut-sm);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.deck-chip:hover:not(:disabled) { border-color: var(--cut-line); color: var(--text-hi); }
+.deck-chip:disabled { opacity: 0.55; cursor: default; }
+.deck-name { font-family: var(--hud); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+.deck-branch { font-family: var(--hud); font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); }
+.deck-dot { align-self: center; width: 7px; height: 7px; clip-path: var(--cut-sm); background: var(--text-dim); }
+.deck-dot.dot-ok { background: var(--ok); }
+.deck-dot.dot-err { background: var(--alert); }
+.deck-dot.dot-run { background: var(--accent-hi); animation: deck-pulse 1s ease-in-out infinite alternate; }
+@keyframes deck-pulse { from { opacity: 0.35; } to { opacity: 1; } }
+
+/* Metrics rail: vitals bars + the spend sparkline */
+.gauge { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.gauge-label { flex-shrink: 0; min-width: 64px; font-family: var(--hud); font-size: 9px; letter-spacing: 1.5px; color: var(--text-dim); }
+.gauge-bar { flex: 1; height: 6px; background: rgba(var(--accent-rgb),0.08); border: 1px solid var(--line); overflow: hidden; }
+.gauge-bar i { display: block; height: 100%; background: var(--accent); opacity: 0.75; }
+.gauge-value { flex-shrink: 0; min-width: 40px; text-align: right; font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-hi); }
+.spark { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+.spark-bars { flex: 1; display: flex; gap: 2px; align-items: flex-end; height: 26px; }
+.spark-bars i { flex: 1; background: var(--accent); opacity: 0.55; min-height: 1px; }
+
+/* Primary directive: the one goal, huge, under the core */
+.directive {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin-top: 14px;
+  pointer-events: none;
+}
+.directive-label { font-family: var(--hud); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); }
+.directive-value {
+  font-family: var(--hud);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--accent-hi);
+  text-shadow: 0 0 24px rgba(var(--accent-rgb),0.45);
+  font-variant-numeric: tabular-nums;
+}
+.directive-unit { font-style: normal; font-size: 18px; color: var(--accent-dim); margin-left: 4px; }
+.directive-track { width: 220px; height: 4px; background: rgba(var(--accent-rgb),0.1); border: 1px solid var(--line); overflow: hidden; }
+.directive-track i { display: block; height: 100%; background: var(--cut-accent); opacity: 0.85; }
+.directive-target { font-family: var(--hud); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+
+/* Collapsible card header (Conversation) */
+.card-fold { display: inline-flex; gap: 6px; align-items: center; padding: 0; background: none; border: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.card-fold i { font-style: normal; color: var(--text-dim); }
+
+/* Right-rail tabs (Wire / Activity) */
+.rail-tabs { display: flex; gap: 6px; }
+.rail-tab {
+  padding: 5px 12px;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-family: var(--hud);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: var(--cut-sm);
+}
+.rail-tab.on { color: var(--accent-hi); border-color: var(--cut-line); background: rgba(var(--accent-rgb),0.08); }
+
+/* Wire: headlines from the configured feeds */
+.wire-row { display: grid; gap: 2px; }
+.wire-title { color: var(--text-hi); font-size: 12.5px; line-height: 1.45; text-decoration: none; }
+.wire-title:hover { color: var(--accent-hi); text-decoration: underline; }
+.wire-meta { font-family: var(--hud); font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); }
+
+/* Schedule: today's events + next skill runs */
+.sched-row { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; }
+.sched-time { flex-shrink: 0; min-width: 58px; font-family: var(--hud); font-size: 10px; letter-spacing: 1px; color: var(--accent); }
+.sched-title { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-cadence { font-style: normal; font-family: var(--hud); font-size: 9px; letter-spacing: 1px; color: var(--text-dim); }
+.sched-runs { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+.sched-run .sched-time { color: var(--text-dim); }
+.notice-note { align-self: flex-start; font-size: 11px; }
+
+/* Vault: recent-notes card + note slide-over */
+.vault-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  background: rgba(var(--accent-rgb),0.05);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  clip-path: var(--cut-sm);
+}
+.vault-item:hover { background: rgba(var(--accent-rgb),0.12); color: var(--text-hi); }
+.vault-title { font-size: 13px; color: var(--text-hi); }
+.vault-meta { display: flex; justify-content: space-between; gap: 8px; font-family: var(--hud); font-size: 10px; letter-spacing: 1px; color: var(--text-dim); }
+.vault-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.note-scrim { position: fixed; inset: 0; z-index: 40; background: rgba(2, 5, 11, 0.55); backdrop-filter: blur(2px); }
+.note-view {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 94vw);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 20px;
+  background: rgba(8, 16, 26, 0.92);
+  border-left: 1px solid var(--cut-line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: note-in 0.22s ease-out;
+}
+@keyframes note-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.note-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.note-head h2 { margin: 0 0 4px; font-family: var(--hud); font-size: 14px; font-weight: 400; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent-hi); }
+.note-sub { display: flex; gap: 12px; margin: 0; font-family: var(--hud); font-size: 10px; letter-spacing: 1px; color: var(--text-dim); }
+.note-close { padding: 4px 9px; background: none; border: 1px solid var(--line); color: var(--text-dim); font: inherit; cursor: pointer; clip-path: var(--cut-sm); }
+.note-close:hover { color: var(--text-hi); border-color: var(--accent); }
+.note-body { flex: 1; overflow-y: auto; font-size: 13.5px; line-height: 1.65; color: var(--text); }
+.note-body h3, .note-body h4, .note-body h5 { margin: 18px 0 8px; font-family: var(--hud); font-weight: 400; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); }
+.note-body h3 { font-size: 13px; }
+.note-body h4 { font-size: 11px; }
+.note-body h5 { font-size: 10px; color: var(--accent-dim); }
+.note-body p { margin: 0 0 10px; }
+.note-body ul { margin: 0 0 10px; padding-left: 18px; }
+.note-body li { margin-bottom: 4px; }
+.note-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.note-links-label { font-family: var(--hud); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.wikilink { padding: 0 2px; background: none; border: none; border-bottom: 1px dashed var(--accent-dim); color: var(--accent-hi); font: inherit; cursor: pointer; }
+.wikilink:hover { color: var(--text-hi); border-bottom-color: var(--accent); }
+
 /* Focus */
-:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Responsive: stack rails under the core */
 @media (max-width: 920px) {

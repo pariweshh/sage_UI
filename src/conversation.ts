@@ -21,6 +21,66 @@ export const VAD_TUNING = {
   REARM_DEBOUNCE_MS: 500,
 } as const;
 
+// --- Wake-word gating (conversation mode only) -------------------------------------------------
+// Turns are gated behind a wake word, conversationally: dormant until the wake phrase, then an
+// active window where follow-ups need no wake word, closing after a lull. PTT + typed are explicit
+// and never gated. The wake phrase defaults to the assistant name (sent from the backend); set
+// WAKE_PHRASE to make the wake word differ from the display name.
+export const WAKE_TUNING = {
+  /** Wake word, if it should differ from the assistant name. Empty -> use ASSISTANT_NAME. */
+  WAKE_PHRASE: '',
+  /** Extra accepted spellings/mishears (case-insensitive), e.g. ['sage', 'sange'], for robustness. */
+  WAKE_VARIANTS: [] as string[],
+  /** After a wake, the window stays open this long of inactivity before you must say the word again. */
+  WAKE_WINDOW_TIMEOUT_MS: 20_000,
+  /** Wake gating on by default in conversation mode; off -> every utterance is a turn (as before). */
+  WAKE_GATING_DEFAULT: true,
+} as const;
+
+export interface WakeMatch {
+  hit: boolean;
+  /** Text after the wake word (stripped of a leading comma/space); '' when only the wake word. */
+  remainder: string;
+}
+
+// Find `needle` as a whole word within the first `maxStart` characters of `hay` (already lowercased).
+function findWordNearStart(hay: string, needle: string, maxStart: number): number {
+  const isWordChar = (c: string): boolean => /[a-z0-9]/i.test(c);
+  for (let from = 0; ; ) {
+    const i = hay.indexOf(needle, from);
+    if (i === -1 || i > maxStart) return -1;
+    const before = i === 0 ? ' ' : hay[i - 1];
+    const after = hay[i + needle.length] ?? ' ';
+    if (!isWordChar(before) && !isWordChar(after)) return i;
+    from = i + 1;
+  }
+}
+
+/**
+ * Transcript-based wake detection. Case-insensitive; tolerant of a leading comma/punctuation and of
+ * the wake word appearing at or near the start (e.g. "hey sage, what's up"). On a hit, `remainder` is
+ * the text after the wake word ('' if the utterance is only the wake word).
+ */
+export function matchWake(transcript: string, wakeWords: string[]): WakeMatch {
+  const raw = transcript.trim();
+  const lower = raw.toLowerCase();
+  const NEAR_START = 24; // allow a short lead-in like "hey " / "ok " before the wake word
+  let best = -1;
+  let bestEnd = 0;
+  for (const w of wakeWords) {
+    const word = w.trim().toLowerCase();
+    if (!word) continue;
+    const idx = findWordNearStart(lower, word, NEAR_START);
+    if (idx !== -1 && (best === -1 || idx < best)) {
+      best = idx;
+      bestEnd = idx + word.length;
+    }
+  }
+  if (best === -1) return { hit: false, remainder: '' };
+  const remainder = raw.slice(bestEnd).replace(/^[\s,.:;!?-]+/, '').trim();
+  return { hit: true, remainder };
+}
+
 // Self-hosted asset locations (served from sage-ui/public). No runtime external calls.
 const VAD_BASE_ASSET_PATH = '/vad/';
 const ONNX_WASM_BASE_PATH = '/onnx-wasm/';

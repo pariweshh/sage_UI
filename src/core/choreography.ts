@@ -1,13 +1,14 @@
 import gsap from 'gsap';
-import { STATE_TARGETS, type CoreParams } from './states';
+import type { CoreParams, StateTargets } from './states';
 import type { VoiceState } from '../voiceClient';
 
 // Choreograph a state TRANSITION as a GSAP timeline that mutates `params` over a
 // sequence (never a crossfade). useFrame layers continuous motion + the voice envelope
 // on top; this only sequences the discrete reconfiguration. The rendered hue lerps
-// toward `params.color` in useFrame, so here we just snap the target hue at the right beat.
-export function choreograph(params: CoreParams, to: VoiceState, reduced: boolean): gsap.core.Timeline {
-  const t = STATE_TARGETS[to];
+// toward `params.color` in useFrame, so here we just snap the target hue at the right
+// beat. `targets` comes from the active theme, so a theme switch re-choreographs.
+export function choreograph(params: CoreParams, to: VoiceState, targets: StateTargets, reduced: boolean): gsap.core.Timeline {
+  const t = targets[to];
   const nums = numeric(t);
   const tl = gsap.timeline();
 
